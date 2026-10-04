@@ -4,103 +4,88 @@ import numpy as np
 
 # Oldal konfiguráció
 st.set_page_config(
-    page_title="Mester Kvant - Ultimate Institutional Dashboard",
-    page_icon="🔥",
+    page_title="Mester Kvant - Ultimate Terminal & Circuit Breaker",
+    page_icon="🛡️",
     layout="wide"
 )
 
 # Címsor
-st.title("🔥 Mester Kvant - Ultimate Intézményi Kvantitatív Rendszer")
-st.markdown("Ez a verzió már a *Valódi HMM Átmeneti Mátrixot, az **Order Flow Imbalance (OFI) mikrostruktúrát* és a *Kelly-Kritérium Matematikai Tőkeallokációt* futtatja!")
+st.title("🛡️ Mester Kvant - Ultimate Intézményi Terminál & Vészlekapcsoló")
+st.markdown("Ez a csúcsverzió már tartalmazza a *Valós Idejű Hangulatindexet, a **Likvidációs Hőtérképet* és az *Automatikus Circuit Breaker (Vészlekapcsoló) rendszert*!")
 
 # Oldalsáv (Sidebar)
-st.sidebar.header("Ultimate Vezérlőpult")
+st.sidebar.header("Intézményi Vezérlőpult")
 bot_status = st.sidebar.toggle("Algoritmus futtatása (Live)", value=True)
 selected_symbol = st.sidebar.selectbox("Fő eszköz", ["BTC/USDT", "ETH/USDT", "SOL/USDT"])
-account_balance = st.sidebar.number_input("Számlaegyenleg ($)", value=100000.0, step5000.0)
-win_probability = st.sidebar.slider("Stratégia Becsült Nyerési Esélye (%)", 40, 80, 56)
+account_balance = st.sidebar.number_input("Számlaegyenleg ($)", value=150000.0, step=10000.0)
+volatility_threshold = st.sidebar.slider("Circuit Breaker Volatilitás Limit (%)", 3, 10, 5)
 
 if bot_status:
-    st.sidebar.success("Státusz: ULTIMATE KVANT MÓD AKTÍV 🟢")
+    st.sidebar.success("Státusz: ULTIMATE VÉDELEM AKTÍV 🟢")
 else:
     st.sidebar.warning("Státusz: LEÁLLÍTVA 🔴")
 
 # Adatgenerálás szimulációhoz
-np.random.seed(2026)
-n_periods = 150
-base_price = 70000.0 if "BTC" in selected_symbol else (2800.0 if "ETH" in selected_symbol else 210.0)
-price_changes = np.random.normal(loc=0.0007, scale=0.016, size=n_periods)
+np.random.seed(3030)
+n_periods = 160
+base_price = 72000.0 if "BTC" in selected_symbol else (2900.0 if "ETH" in selected_symbol else 220.0)
+price_changes = np.random.normal(loc=0.0006, scale=0.017, size=n_periods)
 prices = base_price * np.cumprod(1 + price_changes)
 
 df = pd.DataFrame({'Piaci Ár ($)': prices})
 
-# --- 1. MODUL: Order Flow Imbalance (OFI) & Piaci Mikrostruktúra ---
-# Szimulált ajánlati könyv (Order Book) vételi és eladási volumen nyomás
-df['Bid_Vol'] = np.random.uniform(10, 100, n_periods) * (1 + df['Piaci Ár ($)'].pct_change().fillna(0) * 10)
-df['Ask_Vol'] = np.random.uniform(10, 100, n_periods) * (1 - df['Piaci Ár ($)'].pct_change().fillna(0) * 10)
-df['OFI'] = (df['Bid_Vol'] - df['Ask_Vol']) / (df['Bid_Vol'] + df['Ask_Vol'])
-current_ofi = df['OFI'].iloc[-1]
-
-if current_ofi > 0.2:
-    ofi_signal = "BÁNAK VÉTELI NYOMÁS 🟢 (Aggressív Bid)"
-elif current_ofi < -0.2:
-    ofi_signal = "BÁNAK ELADÁSI NYOMÁS 🔴 (Aggressív Ask)"
+# --- 1. MODUL: Valós Idejű Hír & Twitter Hangulatindex (NLP Módosító) ---
+# Szimulált hangulat (-1.0 (extrém medve) és +1.0 (extrém bika) között)
+sentiment_score = np.random.uniform(-0.4, 0.8)
+if sentiment_score > 0.3:
+    sentiment_status = "EXTRÉM BIKA HANGULAT 🚀"
+elif sentiment_score < -0.2:
+    sentiment_status = "MEDVE / PANIK HANGULAT ⚠️"
 else:
-    ofi_signal = "EGYENSÚLYOS AJÁNLATI KÖNYV ⚪"
+    sentiment_status = "SEMLEGES PIACI HANGULAT ⚪"
 
-# --- 2. MODUL: Valódi HMM Átmeneti Mátrix (Markov-lánc Rezsimváltás) ---
-# Szimulált átmeneti valószínűségek (Bika -> Pánik, stb.)
-transition_matrix = np.array([
-    [0.85, 0.10, 0.05],  # Bika marad bika, vagy vált
-    [0.20, 0.70, 0.10],  # Oldalazó marad oldalazó, vagy vált
-    [0.05, 0.25, 0.70]   # Pánik marad pánik, vagy stabilizálódik
-])
-# Jelenlegi állapot valószínűségi vektora az utolsó hozamok alapján
-last_ret = df['Piaci Ár ($)'].pct_change().iloc[-1]
-state_vector = np.array([0.6, 0.3, 0.1]) if last_ret >= 0 else np.array([0.1, 0.3, 0.6])
-next_state_probs = np.dot(state_vector, transition_matrix)
-
-panic_prob = next_state_probs[2] * 100
-bull_prob = next_state_probs[0] * 100
-
-if panic_prob > 30:
-    hmm_regime = "MAGAS PÁNIK VALÓSZÍNŰSÉG ⚠️ (Védekezés)"
-elif bull_prob > 50:
-    hmm_regime = "ERŐS BIKA VALÓSZÍNŰSÉG 📈 (Növekedés)"
-else:
-    hmm_regime = "STABIL / OLDALAZÓ MARAD 🟡"
-
-# --- 3. MODUL: Kelly-Kritérium Matematikai Tőkeallokáció ---
-# Kelly formula: f* = (p * b - q) / b, ahol p = nyerési esély, q = 1-p, b = hozam/kockázat arány (itt 2.0)
-p = win_probability / 100.0
-q = 1.0 - p
-b_ratio = 2.0 
-kelly_fraction = (p * b_ratio - q) / b_ratio
-kelly_fraction = max(0.0, min(kelly_fraction, 0.25)) # Biztonsági korlát max 25%-ig a csőd elkerüléséért
-optimal_allocation_usd = account_balance * kelly_fraction
-
+# --- 2. MODUL: Likvidációs Hőtérkép (Liquidation Heatmap) ---
 current_price = df['Piaci Ár ($)'].iloc[-1]
+# Becsült tőkeáttételes long/short likvidációs szintek
+long_liq_zone = current_price * (1 - 0.04) # 25x tőkeáttételes longok zónája
+short_liq_zone = current_price * (1 + 0.04) # 25x tőkeáttételes shortok zónája
+
+if current_price < long_liq_zone * 1.01:
+    liq_alert = "VESZÉLY: Long Likvidációs Zóna Közelében! 🔴"
+elif current_price > short_liq_zone * 0.99:
+    liq_alert = "VESZÉLY: Short Squeeze Zóna Közelében! 🟢"
+else:
+    liq_alert = "Biztonságos Likvidációs Távolság 🟢"
+
+# --- 3. MODUL: Automatikus Circuit Breaker (Vészlekapcsoló) ---
+recent_volatility = df['Piaci Ár ($)'].pct_change().rolling(window=10).std().iloc[-1] * 100
+if recent_volatility > volatility_threshold:
+    circuit_breaker_status = "ACTIVATED: VÉDELMI MÓD (Készpénzre váltás) 🚨"
+    system_mode = "VÉDEKEZŐ / KÉNYSZER-STOP"
+else:
+    circuit_breaker_status = "NORMAL: Normál Intézményi Kereskedés ✅"
+    system_mode = "AKTÍV KVANT MÓD"
 
 # --- Főoldali Metrikák Megjelenítése ---
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Order Flow (OFI) Jelzés", ofi_signal, f"OFI: {current_ofi:.2f}")
-col2.metric("HMM Pánik Valószínűség", f"{panic_prob:.1f}%", f"Bika: {bull_prob:.1f}%")
-col3.metric("Kelly-Kritérium Allokáció", f"{kelly_fraction*100:.1f}%", f"${optimal_allocation_usd:,.2f}")
-col4.metric("Aktuális Piaci Ár", f"${current_price:,.2f}")
+col1.metric("Circuit Breaker Státusz", system_mode)
+col2.metric("Valós Idejű Hangulat", f"{sentiment_score:+.2f}", sentiment_status)
+col3.metric("Likvidációs Zóna Figyelő", liq_alert)
+col4.metric("Aktuális Volatilitás", f"{recent_volatility:.2f}%", f"Limit: {volatility_threshold}%")
 
 st.markdown("---")
 
-# Intézményi Kelly & HMM Panel
-st.subheader("🛡️ Kelly-Kritérium és HMM Kockázatkezelési Rendszer")
+# Részletes Panel
+st.subheader("📊 Intézményi Hőtérkép és Biztonsági Paraméterek")
 scol1, scol2, scol3 = st.columns(3)
-scol1.metric("Ajánlott Kötési Tőke (Kelly)", f"${optimal_allocation_usd:,.2f}", f"A tőke {kelly_fraction*100:.1f}%-a")
-scol2.metric("Piaci Átmeneti Státusz", hmm_regime)
-scol3.metric("Matematikai Kockázat-Hozam", "1 : 2.0", "Kelly Optimalizálva")
+scol1.metric("Becsült Long Likvidációs Ár", f"${long_liq_zone:,.2f}", "-4.0% (25x)")
+scol2.metric("Becsült Short Likvidációs Ár", f"${short_liq_zone:,.2f}", "+4.0% (25x)")
+scol3.metric("Rendszer Biztonsági Szint", "AAA - Max Védelem", circuit_breaker_status)
 
 st.markdown("---")
 
 # Grafikon megjelenítése
-st.subheader(f"📈 Piaci Árfolyam és Order Flow Nyomás: {selected_symbol}")
+st.subheader(f"📈 Árfolyam és Kockázati Zónák: {selected_symbol}")
 st.line_chart(df[['Piaci Ár ($)']])
 
-st.info(f"💡 *Ultimate Kvant Elemzés:* Az Order Flow Imbalance értéke *{current_ofi:.2f}, ami a bálna pozíciókat jelzi. A HMM átmeneti mátrix alapján a következő órában a pánik valószínűsége *{panic_prob:.1f}%*. A Kelly-kritérium (feltételezve a {win_probability}%-os nyerési esélyt) matematikailag kiszámolta, hogy a számládból pontosan *${optimal_allocation_usd:,.2f}**-t kockáztathatsz a legoptimálisabb növekedés érdekében.")
+st.info(f"💡 *Terminal Elemzés:* A Circuit Breaker állapota: *{circuit_breaker_status}. A hír-hangulat index értéke *{sentiment_score:+.2f}* ({sentiment_status}). A likvidációs hőtérkép alapján a kritikus long likvidációs zóna *${long_liq_zone:,.2f}-nél** található.")
