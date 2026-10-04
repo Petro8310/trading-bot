@@ -10,6 +10,10 @@ import matplotlib.pyplot as plt
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
+# Intézményi Kockázatkezelési Paraméterek
+TOTAL_CAPITAL_USD = 10000.0  # Teljes virtuális tőke (szükség esetén módosítható)
+MAX_RISK_PER_TRADE_PCT = 0.015  # Maximum 1.5% kockázat pozíciónként (reális, biztonságos érték)
+
 def send_telegram_message(text, reply_markup=None):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
@@ -30,29 +34,27 @@ def send_telegram_photo(photo_path, caption=""):
 
 def generate_ai_commentary(sentiment_text, total_profit, rsi_values):
     """Intézményi szintű AI elemző szöveg generálása a kiszámolt adatok alapján"""
-    commentary = "🤖 Mester Kvant AI Elemzés & Döntéstámogatás:\n"
+    commentary = "🤖 Mester Kvant AI Elemzés & Kockázati jelentés:\n"
     
-    # Piaci hangulat és profit alapján történő értékelés
     if "Greed" in sentiment_text or "Kapzsiság" in sentiment_text:
-        commentary += "• Piaci struktúra: A piaci hangulat optimizmust mutat. Ajánlott óvatosnak lenni a túlzott kockázatvállalással a magasabb RSI zónákban.\n"
+        commentary += "• Piaci struktúra: Optimizmus dominál, de a magasabb RSI zónákban fegyelmezett pozíciókezelés javasolt.\n"
     else:
-        commentary += "• Piaci struktúra: A hangulat óvatos vagy félelem zónában van, ami kedvező belépési pontokat teremthet a hosszú távú portfólióépítéshez.\n"
+        commentary += "• Piaci struktúra: Óvatos piaci hangulat, ami kedvez a gondosan méretezett belépéseknek.\n"
         
     if total_profit >= 0:
-        commentary += f"• Portfólió teljesítmény: A napi portfólió pozitív dinamikát mutat (+{total_profit:.2f} USD), a trendkövető pozíciók stabilan teljesítenek.\n"
+        commentary += f"• Portfólió teljesítmény: Napi nyereség: +{total_profit:.2f} USD. A trendek stabilak.\n"
     else:
-        commentary += f"• Portfólió teljesítmény: A mai napon kisebb korrekció tapasztalható ({total_profit:.2f} USD), a Stop-Loss szintek véδik a tőkét.\n"
+        commentary += f"• Portfólió teljesítmény: Napi korrekció: {total_profit:.2f} USD. A Stop-Loss védelmi zónák aktívak.\n"
         
-    # Extrém RSI figyelés
     overbought = [t for t, rsi in rsi_values.items() if rsi > 70]
     oversold = [t for t, rsi in rsi_values.items() if rsi < 40]
     
     if overbought:
-        commentary += f"• Figyelmeztetés: Túlvett zónához közelít: {', '.join(overbought)}. Profitrealizálás fontolóra vehető.\n"
+        commentary += f"• Intézményi Figyelmeztetés (Túlvett): {', '.join(overbought)}. Részleges profitkivétel indokolt lehet.\n"
     if oversold:
-        commentary += f"• Lehetőség: Alulárazott/túladott zóna: {', '.join(oversold)}. Potenciális felpattanási esély.\n"
+        commentary += f"• Lehetőség (Túladott): {', '.join(oversold)}. Potenciális felpattanási zóna.\n"
         
-    commentary += "• Stratégia javaslat: Kövesse fegyelmezetten az ATR alapú SL/TP szinteket, ne hagyja magát érzelmektől vezérelni."
+    commentary += f"• Kockázati fegyelem: Pozíciónkénti max kockázat: {MAX_RISK_PER_TRADE_PCT*100}%. Tartsd be az SL szinteket!"
     return commentary
 
 try:
@@ -60,7 +62,7 @@ try:
     portfolio = {'BTC-USD': 0.05, 'ETH-USD': 0.5, 'GLD': 2.0, 'AAPL': 1.0, 'NVDA': 1.0, 'TSLA': 1.0}
 
     today_str = datetime.now().strftime('%Y-%m-%d')
-    print("Mester Kvant - Intézményi Motor Indítása (AI Elemzéssel)...")
+    print("Mester Kvant - Intézményi Motor Indítása (Kockázatkezelővel)...")
 
     # Piaci Hangulat (Crypto Fear & Greed)
     market_sentiment = "Ismeretlen"
@@ -109,6 +111,14 @@ try:
             stop_loss = current_price - (1.5 * atr)
             take_profit = current_price + (2.5 * atr)
 
+            # --- DINAMIKUS POZÍCIÓ-MÉRETEZÉS (Risk-Parity) ---
+            risk_budget_usd = TOTAL_CAPITAL_USD * MAX_RISK_PER_TRADE_PCT
+            sl_distance = current_price - stop_loss
+            if sl_distance > 0:
+                recommended_shares = risk_budget_usd / sl_distance
+            else:
+                recommended_shares = 0
+
             # --- BACKTESTING MOTOR ---
             hist['SMA20'] = hist['Close'].rolling(window=20).mean()
             hist['SMA50'] = hist['Close'].rolling(window=50).mean()
@@ -126,14 +136,16 @@ try:
                 f"• {ticker}: {current_price:.2f} USD ({change:+.2f}%)\n"
                 f"  └ RSI: {rsi:.1f} | SMA50: {sma_50:.2f}\n"
                 f"  └ Backtest (1Y): {backtest_score}\n"
-                f"  └ 🛡️ SL: {stop_loss:.2f} | 🎯 TP: {take_profit:.2f}"
+                f"  └ 🛡️ SL: {stop_loss:.2f} | 🎯 TP: {take_profit:.2f}\n"
+                f"  └ ⚖️ Javasolt méret ({MAX_RISK_PER_TRADE_PCT*100}% kockázat): {recommended_shares:.2f} db"
             )
             data_results.append(line)
 
             journal_rows.append({
                 'Date': today_str, 'Ticker': ticker, 'Price': round(current_price, 2),
                 'Change_Pct': round(change, 2), 'RSI': round(rsi, 1), 'SMA50': round(sma_50, 2),
-                'StopLoss': round(stop_loss, 2), 'TakeProfit': round(take_profit, 2)
+                'StopLoss': round(stop_loss, 2), 'TakeProfit': round(take_profit, 2),
+                'Rec_Shares': round(recommended_shares, 2)
             })
 
             if abs(change) >= 3.0:
@@ -195,7 +207,7 @@ try:
     if os.path.exists(chart_path):
         send_telegram_photo(chart_path, caption="📈 30 napos normalizált piaci teljesítmény")
 
-    print("Futás sikeresen lezajlott AI elemzéssel!")
+    print("Futás sikeresen lezajlott kockázatkezelési kalkulációval!")
 
 except Exception as err:
     error_msg = f"🚨 KRITIKUS HIBA A KVANTOVÁSI MOTORBAN:\n`{str(err)}`"
