@@ -1,4 +1,3 @@
-
 import os
 import requests
 import yfinance as yf
@@ -29,12 +28,39 @@ def send_telegram_photo(photo_path, caption=""):
         data = {'chat_id': TELEGRAM_CHAT_ID, 'caption': caption, 'parse_mode': 'Markdown'}
         return requests.post(url, data=data, files=files)
 
+def generate_ai_commentary(sentiment_text, total_profit, rsi_values):
+    """Intézményi szintű AI elemző szöveg generálása a kiszámolt adatok alapján"""
+    commentary = "🤖 Mester Kvant AI Elemzés & Döntéstámogatás:\n"
+    
+    # Piaci hangulat és profit alapján történő értékelés
+    if "Greed" in sentiment_text or "Kapzsiság" in sentiment_text:
+        commentary += "• Piaci struktúra: A piaci hangulat optimizmust mutat. Ajánlott óvatosnak lenni a túlzott kockázatvállalással a magasabb RSI zónákban.\n"
+    else:
+        commentary += "• Piaci struktúra: A hangulat óvatos vagy félelem zónában van, ami kedvező belépési pontokat teremthet a hosszú távú portfólióépítéshez.\n"
+        
+    if total_profit >= 0:
+        commentary += f"• Portfólió teljesítmény: A napi portfólió pozitív dinamikát mutat (+{total_profit:.2f} USD), a trendkövető pozíciók stabilan teljesítenek.\n"
+    else:
+        commentary += f"• Portfólió teljesítmény: A mai napon kisebb korrekció tapasztalható ({total_profit:.2f} USD), a Stop-Loss szintek véδik a tőkét.\n"
+        
+    # Extrém RSI figyelés
+    overbought = [t for t, rsi in rsi_values.items() if rsi > 70]
+    oversold = [t for t, rsi in rsi_values.items() if rsi < 40]
+    
+    if overbought:
+        commentary += f"• Figyelmeztetés: Túlvett zónához közelít: {', '.join(overbought)}. Profitrealizálás fontolóra vehető.\n"
+    if oversold:
+        commentary += f"• Lehetőség: Alulárazott/túladott zóna: {', '.join(oversold)}. Potenciális felpattanási esély.\n"
+        
+    commentary += "• Stratégia javaslat: Kövesse fegyelmezetten az ATR alapú SL/TP szinteket, ne hagyja magát érzelmektől vezérelni."
+    return commentary
+
 try:
     tickers = ['BTC-USD', 'ETH-USD', 'GLD', 'AAPL', 'NVDA', 'TSLA']
     portfolio = {'BTC-USD': 0.05, 'ETH-USD': 0.5, 'GLD': 2.0, 'AAPL': 1.0, 'NVDA': 1.0, 'TSLA': 1.0}
 
     today_str = datetime.now().strftime('%Y-%m-%d')
-    print("Mester Kvant - Intézményi Motor Indítása (Grafikon & Hibafigyeléssel)...")
+    print("Mester Kvant - Intézményi Motor Indítása (AI Elemzéssel)...")
 
     # Piaci Hangulat (Crypto Fear & Greed)
     market_sentiment = "Ismeretlen"
@@ -51,17 +77,18 @@ try:
     total_daily_profit = 0.0
     alerts = []
     prices_for_chart = {}
+    rsi_dict = {}
 
     for ticker in tickers:
         t = yf.Ticker(ticker)
-        hist = t.history(period="1y") # 1 év adat a backtesthez és elemzéshez
+        hist = t.history(period="1y")
         
         if len(hist) >= 50:
             current_price = hist['Close'].iloc[-1]
             prev_price = hist['Close'].iloc[-2]
             change = ((current_price - prev_price) / prev_price) * 100
             
-            prices_for_chart[ticker] = hist['Close'].tail(30) # Utolsó 30 nap a grafikonhoz
+            prices_for_chart[ticker] = hist['Close'].tail(30)
             
             # SMA 50 & RSI
             sma_50 = hist['Close'].iloc[-50:].mean()
@@ -70,6 +97,7 @@ try:
             loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
             rs = gain / loss
             rsi = 100 - (100 / (1 + rs)).iloc[-1]
+            rsi_dict[ticker] = rsi
             
             # ATR Stop-Loss / Take-Profit
             high_low = hist['High'] - hist['Low']
@@ -138,6 +166,9 @@ try:
     plt.savefig(chart_path, dpi=150)
     plt.close()
 
+    # AI Elemzés generálása
+    ai_text = generate_ai_commentary(market_sentiment, total_daily_profit, rsi_dict)
+
     # Üzenet összeállítása Telegramra
     message = f"🏛️ Mester Kvant Intézményi Jelentés ({today_str})\n\n"
     message += f"🌐 Piaci Hangulat: {market_sentiment}\n\n"
@@ -147,7 +178,8 @@ try:
         message += "⚠️ Riasztások:\n" + "\n".join(alerts) + "\n\n"
 
     profit_icon = "🟢" if total_daily_profit >= 0 else "🔴"
-    message += f"💰 Napi Portfólió Változás: {profit_icon} {total_daily_profit:+.2f} USD"
+    message += f"💰 Napi Portfólió Változás: {profit_icon} {total_daily_profit:+.2f} USD\n\n"
+    message += f"-----------------------------------\n{ai_text}"
 
     # Telegram üzenet + Gombok küldése
     keyboard = {
@@ -163,7 +195,7 @@ try:
     if os.path.exists(chart_path):
         send_telegram_photo(chart_path, caption="📈 30 napos normalizált piaci teljesítmény")
 
-    print("Futás sikeresen lezajlott!")
+    print("Futás sikeresen lezajlott AI elemzéssel!")
 
 except Exception as err:
     error_msg = f"🚨 KRITIKUS HIBA A KVANTOVÁSI MOTORBAN:\n`{str(err)}`"
@@ -172,3 +204,4 @@ except Exception as err:
         send_telegram_message(error_msg)
     except Exception:
         pass
+    raise err
