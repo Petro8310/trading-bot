@@ -4,22 +4,31 @@ import os
 
 st.set_page_config(page_title="Mester Kvant Dashboard", page_icon="📈", layout="wide")
 
-st.title("🏛️ Mester Kvant - Élő Kereskedési & Portfólió Dashboard")
-st.markdown("Üdvözlök a saját intézményi szintű elemző rendszeredben! Itt követheted nyomon a virtuális vagyonodat és a naplózott stratégiákat.")
+st.title("🏛️ Mester Kvant - Intézményi Kereskedési Dashboard")
+st.markdown("Üdvözlöm a vezérlőpulton! Itt nyomon követheti a felhőben futó kvantitatív motor kereskedési naplóit és teljesítménymutatóit.")
 
 csv_filename = 'trading_journal.csv'
+
 if os.path.exists(csv_filename):
     df = pd.read_csv(csv_filename)
-    st.subheader("📊 Legfrissebb Elemzési Adatok")
-    st.dataframe(df.tail(10), use_container_width=True)
     
-    st.subheader("📈 Árfolyamok és Mutatók Grafikonon")
-    selected_ticker = st.selectbox("Válassz eszközt:", df['Ticker'].unique())
-    ticker_data = df[df['Ticker'] == selected_ticker]
-    if not ticker_data.empty:
+    # Utolsó nap adatai
+    latest_date = df['Date'].max()
+    st.subheader(f"📅 Legfrissebb jelentés dátuma: {latest_date}")
+    
+    latest_df = df[df['Date'] == latest_date]
+    st.dataframe(latest_df, use_container_width=True)
+    
+    st.markdown("---")
+    st.subheader("📜 Teljes Kereskedési Napló Előzmény")
+    st.dataframe(df, use_container_width=True)
+    
+    # Vizuális elemzés
+    st.markdown("---")
+    st.subheader("📊 Árak alakulása a naplóban")
+    if 'Ticker' in df.columns and 'Price' in df.columns:
+        selected_ticker = st.selectbox("Válasszon eszközt a részletes elemzéshez:", df['Ticker'].unique())
+        ticker_data = df[df['Ticker'] == selected_ticker]
         st.line_chart(ticker_data.set_index('Date')['Price'])
 else:
-    st.warning("Még nincsenek naplózott adatok. Futtasd le a botot egyszer!")
-
-st.sidebar.header("Rendszer Információk")
-st.sidebar.info("Státusz: 🟢 Futáskész\nVerzió: 4.0 Intézményi")
+    st.warning("Még nem található trading_journal.csv naplófájl. Futtassa először a botot a GitHub Actions-ben!")
