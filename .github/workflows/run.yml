@@ -1,0 +1,26 @@
+name: Trading Bot Automata Futtatas
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kod letoltese
+        uses: actions/checkout@v4
+
+      - name: Python telepitese
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Szükséges csomagok telepitese
+        run: |
+          pip install --upgrade pip
+          pip install pandas numpy requests yfinance
+
+      - name: Bot futtatasa
+        run: python bot.py
