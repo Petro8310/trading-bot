@@ -3,7 +3,7 @@ name: Trading Bot Automata Futtatas
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 8 * * 1-5' # Hétfőtől péntekig minden reggel 8:00-kor (UTC)
+    - cron: '0 8 * * 1-5'  # Hétfőtől péntekig minden reggel 8:00-kor (UTC szerint)
 
 jobs:
   run-bot:
@@ -31,5 +31,5 @@ jobs:
       - name: Naplo fajlok visszamentése a repoba
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Auto: Frissitett kereskedesi naplo es grafikon"
+          commit_message: "Auto: Frissitett kereskedesi naplo es arak"
           file_pattern: "*.csv *.png"
