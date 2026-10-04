@@ -2,7 +2,7 @@ import os
 import requests
 import yfinance as yf
 
-# 1. Beolvesszük a GitHub Secret-ként rögzített adatokat
+# 1. Beolvesszük a Github Secret-ként rögzített adatokat
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -15,7 +15,7 @@ if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
 TICKERS = ["BTC-USD", "ETH-USD", "GLD", "AAPL", "NVDA", "TSLA"]
 
 def get_market_data():
-    report = "🤖 *PetroCryptoBot - Piaci Elemzés* 📈\n\n"
+    report = "📈 PetroCryptoBot - Piaci elemzés 📊\n\n"
     
     for symbol in TICKERS:
         try:
@@ -24,7 +24,7 @@ def get_market_data():
             df = ticker.history(period="5d")
             
             if df.empty:
-                report += f"❌ *{symbol}*: Nincs elérhető adat.\n\n"
+                report += f"❌ {symbol}: Nincs elérhető adat.\n\n"
                 continue
                 
             current_price = df['Close'].iloc[-1]
@@ -32,12 +32,12 @@ def get_market_data():
             change = ((current_price - prev_price) / prev_price) * 100
             
             emoji = "🟢" if change >= 0 else "🔴"
-            report += f"{emoji} *{symbol}*\n"
-            report += f"• Ár: ${current_price:,.2f}\n"
-            report += f"• Változás: {change:+.2f}%\n\n"
+            report += f"{emoji} {symbol}\n"
+            report += f"   • Ár: ${current_price:,.2f}\n"
+            report += f"   • Változás: {change:+.2f}%\n\n"
             
         except Exception as e:
-            report += f"⚠️ *{symbol}*: Hiba történt az adatok lekérdezésekor.\n\n"
+            report += f"⚠️ {symbol}: Hiba történt az adatok lekérdezésekor.\n\n"
             
     return report
 
@@ -50,7 +50,7 @@ def send_telegram_message(text):
     }
     response = requests.post(url, json=payload)
     if response.status_code == 200:
-        print("Üzenet sikeresen elküldve a Telegramra!")
+        print("Üzenet sikeresen elküldve a Telegramnak!")
     else:
         print(f"Hiba a küldés során: {response.text}")
 
