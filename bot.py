@@ -54,7 +54,7 @@ def send_telegram_message(text):
     else:
         print(f"Hiba a küldés során: {response.text}")
 
-if _name_ == "_main_":
-    print("Piaci adatok lekérdezése folyamatban...")
-    message = get_market_data()
-    send_telegram_message(message)
+# Főprogram indítása dupla aláhúzások nélkül:
+print("Piaci adatok lekérdezése folyamatban...")
+message = get_market_data()
+send_telegram_message(message)
