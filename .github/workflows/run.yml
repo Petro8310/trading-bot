@@ -2,7 +2,6 @@ name: Trading Bot Automata Futtatas
 
 on:
   schedule:
-    # Fut naponta 3 alkalommal: UTC 6:00, 12:00, 18:00
     - cron: '0 6,12,18 * * *'
   workflow_dispatch:
 
@@ -23,12 +22,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas numpy requests yfinance
 
-      - name: Bot futtatasa
+      - name: Bot futtatása
         run: python bot.py
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Jelentes mentese (Artifacts)
         uses: actions/upload-artifact@v4
         with:
           name: trading-report
-          path: trading_report.csv
-
+          path: trading-report.csv
