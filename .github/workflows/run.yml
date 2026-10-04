@@ -1,4 +1,3 @@
-
 name: Trading Bot Automata Futtatas
 
 on:
@@ -20,7 +19,7 @@ jobs:
 
       - name: Szukseges csomagok telepitese
         run: |
-          pip install yfinance requests matplotlib
+          pip install yfinance requests matplotlib pandas numpy
 
       - name: Bot futtatasa
         env:
