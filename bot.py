@@ -20,11 +20,10 @@ def get_market_data():
     for symbol in TICKERS:
         try:
             ticker = yf.Ticker(symbol)
-            # Az utolsó 5 nap adatait kérjük le a biztonságos számításhoz
             df = ticker.history(period="5d")
             
             if df.empty:
-                report += f"❌ {symbol}: Nincs elérhető adat.\n\n"
+                report += f"❌ {symbol} : Nincs elérhető adat.\n\n"
                 continue
                 
             current_price = df['Close'].iloc[-1]
@@ -37,7 +36,7 @@ def get_market_data():
             report += f"   • Változás: {change:+.2f}%\n\n"
             
         except Exception as e:
-            report += f"⚠️ {symbol}: Hiba történt az adatok lekérdezésekor.\n\n"
+            report += f"⚠️ {symbol} : Hiba történt az adatok lekérdezésekor.\n\n"
             
     return report
 
