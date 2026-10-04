@@ -1,39 +1,75 @@
+
 import os
 import requests
 import yfinance as yf
+import matplotlib.pyplot as plt
 
-print("Bot inditasa...")
+TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
+TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-token = os.getenv("TELEGRAM_TOKEN")
-chat_id = os.getenv("TELEGRAM_CHAT_ID")
+tickers = ['BTC-USD', 'ETH-USD', 'GLD', 'AAPL', 'NVDA', 'TSLA']
+data_results = []
+names = []
+changes = []
 
-if not token or not chat_id:
-    print("Hiba: Nincsenek beallitva a Telegram kulcsok!")
-    exit(1)
+print("Bot inditasa es adatok letoltese...")
 
-tickers = ["BTC-USD", "ETH-USD", "GLD", "AAPL", "NVDA", "TSLA"]
-report = "Piaci jelentes:\n\n"
-
-for symbol in tickers:
+for ticker in tickers:
     try:
-        t = yf.Ticker(symbol)
-        df = t.history(period="5d")
-        if not df.empty:
-            p1 = df['Close'].iloc[-1]
-            p2 = df['Close'].iloc[-2]
-            ch = ((p1 - p2) / p2) * 100
-            report += symbol + ": " + str(round(p1, 2)) + " USD (" + str(round(ch, 2)) + "%)\n"
+        t = yf.Ticker(ticker)
+        hist = t.history(period="5d")
+        if len(hist) >= 2:
+            current_price = hist['Close'].iloc[-1]
+            prev_price = hist['Close'].iloc[-2]
+            change = ((current_price - prev_price) / prev_price) * 100
+            data_results.append(f"• {ticker}: {current_price:.2f} USD ({change:+.2f}%)")
+            names.append(ticker)
+            changes.append(change)
         else:
-            report += symbol + ": Nincs adat\n"
-    except Exception:
-        report += symbol + ": Hiba lekerdezeskor\n"
+            current_price = hist['Close'].iloc[-1]
+            data_results.append(f"• {ticker}: {current_price:.2f} USD (N/A)")
+    except Exception as e:
+        print(f"Hiba a(z) {ticker} lekérdezésekor: {e}")
 
-url = "https://api.telegram.org/bot" + token + "/sendMessage"
+# Üzenet összeállítása
+message = "📊 Automata Piaci Jelentés\n\n" + "\n".join(data_results)
+
+# Grafikon generálása
+has_chart = False
+try:
+    plt.figure(figsize=(8, 4))
+    colors = ['green' if c >= 0 else 'red' for c in changes]
+    plt.bar(names, changes, color=colors)
+    plt.axhline(0, color='black', linewidth=0.8)
+    plt.title('Napi Változások (%)')
+    plt.ylabel('%')
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    chart_path = 'market_chart.png'
+    plt.savefig(chart_path, dpi=150)
+    plt.close()
+    has_chart = True
+    print("Grafikon sikeresen generálva.")
+except Exception as e:
+    print(f"Hiba a grafikon generálásakor: {e}")
+
+# Szöveges üzenet küldése Telegramra
+url_text = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 payload = {
-    "chat_id": chat_id,
-    "text": report
+    'chat_id': TELEGRAM_CHAT_ID,
+    'text': message,
+    'parse_mode': 'Markdown'
 }
+response = requests.post(url_text, json=payload)
+print(f"Telegram szöveg válasz státusz: {response.status_code}")
 
-resp = requests.post(url, json=payload)
-print("Telegram valasz sttuszu:", resp.status_code)
+# Grafikon küldése Telegramra (ha sikerült elkészíteni)
+if has_chart and response.status_code == 200:
+    url_photo = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+    with open(chart_path, 'rb') as photo_file:
+        files = {'photo': photo_file}
+        data_photo = {'chat_id': TELEGRAM_CHAT_ID, 'caption': '📈 Napi teljesítmény grafikon'}
+        resp_photo = requests.post(url_photo, data=data_photo, files=files)
+        print(f"Telegram kép válasz státusz: {resp_photo.status_code}")
+
 print("Keszen van!")
