@@ -1,37 +1,58 @@
+
 import os
 import requests
 import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import matplotlib.pyplot as plt
 
 # Beállítások
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-tickers = ['BTC-USD', 'ETH-USD', 'GLD', 'AAPL', 'NVDA', 'TSLA']
-portfolio = {'BTC-USD': 0.05, 'ETH-USD': 0.5, 'GLD': 2.0, 'AAPL': 1.0, 'NVDA': 1.0, 'TSLA': 1.0}
+def send_telegram_message(text, reply_markup=None):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        'chat_id': TELEGRAM_CHAT_ID,
+        'text': text,
+        'parse_mode': 'Markdown'
+    }
+    if reply_markup:
+        payload['reply_markup'] = reply_markup
+    return requests.post(url, json=payload)
 
-today_str = datetime.now().strftime('%Y-%m-%d')
-print("Mester Kvant - Intézményi Motor Indítása...")
+def send_telegram_photo(photo_path, caption=""):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+    with open(photo_path, 'rb') as photo:
+        files = {'photo': photo}
+        data = {'chat_id': TELEGRAM_CHAT_ID, 'caption': caption, 'parse_mode': 'Markdown'}
+        return requests.post(url, data=data, files=files)
 
-# 1. Piaci Hangulat (Crypto Fear & Greed)
-market_sentiment = "Ismeretlen"
 try:
-    fg_res = requests.get("https://api.alternative.me/fng/?limit=1", timeout=5).json()
-    val = fg_res['data'][0]['value']
-    text_sent = fg_res['data'][0]['value_classification']
-    market_sentiment = f"{val}/100 ({text_sent})"
-except Exception as e:
-    print(f"F&G Hiba: {e}")
+    tickers = ['BTC-USD', 'ETH-USD', 'GLD', 'AAPL', 'NVDA', 'TSLA']
+    portfolio = {'BTC-USD': 0.05, 'ETH-USD': 0.5, 'GLD': 2.0, 'AAPL': 1.0, 'NVDA': 1.0, 'TSLA': 1.0}
 
-data_results = []
-journal_rows = []
-total_daily_profit = 0.0
-alerts = []
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    print("Mester Kvant - Intézményi Motor Indítása (Grafikon & Hibafigyeléssel)...")
 
-for ticker in tickers:
+    # Piaci Hangulat (Crypto Fear & Greed)
+    market_sentiment = "Ismeretlen"
     try:
+        fg_res = requests.get("https://api.alternative.me/fng/?limit=1", timeout=5).json()
+        val = fg_res['data'][0]['value']
+        text_sent = fg_res['data'][0]['value_classification']
+        market_sentiment = f"{val}/100 ({text_sent})"
+    except Exception as e:
+        print(f"F&G Hiba: {e}")
+
+    data_results = []
+    journal_rows = []
+    total_daily_profit = 0.0
+    alerts = []
+    prices_for_chart = {}
+
+    for ticker in tickers:
         t = yf.Ticker(ticker)
         hist = t.history(period="1y") # 1 év adat a backtesthez és elemzéshez
         
@@ -39,6 +60,8 @@ for ticker in tickers:
             current_price = hist['Close'].iloc[-1]
             prev_price = hist['Close'].iloc[-2]
             change = ((current_price - prev_price) / prev_price) * 100
+            
+            prices_for_chart[ticker] = hist['Close'].tail(30) # Utolsó 30 nap a grafikonhoz
             
             # SMA 50 & RSI
             sma_50 = hist['Close'].iloc[-50:].mean()
@@ -58,7 +81,7 @@ for ticker in tickers:
             stop_loss = current_price - (1.5 * atr)
             take_profit = current_price + (2.5 * atr)
 
-            # --- BACKTESTING / VISSZATESZTELÉSI MOTOR ---
+            # --- BACKTESTING MOTOR ---
             hist['SMA20'] = hist['Close'].rolling(window=20).mean()
             hist['SMA50'] = hist['Close'].rolling(window=50).mean()
             hist['Signal'] = np.where(hist['SMA20'] > hist['SMA50'], 1, -1)
@@ -88,11 +111,8 @@ for ticker in tickers:
             if abs(change) >= 3.0:
                 direction = "emelkedés 🚀" if change > 0 else "esés 🩸"
                 alerts.append(f"🚨 FIGYELEM: {ticker} {abs(change):.2f}%-os {direction}!")
-    except Exception as e:
-        print(f"Hiba {ticker} feldolgozásakor: {e}")
 
-# Napló mentése CSV-be
-try:
+    # Napló mentése CSV-be
     df_new = pd.DataFrame(journal_rows)
     csv_filename = 'trading_journal.csv'
     if os.path.exists(csv_filename):
@@ -101,33 +121,54 @@ try:
         df_combined.to_csv(csv_filename, index=False)
     else:
         df_new.to_csv(csv_filename, index=False)
-except Exception as e:
-    print(f"Naplózási hiba: {e}")
 
-# Üzenet összeállítása Telegramra interaktív gombokkal
-message = f"🏛️ Mester Kvant Intézményi Jelentés ({today_str})\n\n"
-message += f"🌐 Piaci Hangulat: {market_sentiment}\n\n"
-message += "\n\n".join(data_results) + "\n\n"
+    # --- GRAFIKON GENERÁLÁS MATPLOTLIB-BEL ---
+    plt.figure(figsize=(10, 5))
+    for t_name, series in prices_for_chart.items():
+        norm_series = (series / series.iloc[0]) * 100
+        plt.plot(norm_series.index, norm_series, label=t_name)
+    
+    plt.title("Mester Kvant - Eszközök Teljesítménye (Utolsó 30 nap, Normalizált)")
+    plt.xlabel("Dátum")
+    plt.ylabel("Érték (%)")
+    plt.legend(loc="upper left")
+    plt.grid(True, linestyle="--", alpha=0.6)
+    plt.tight_layout()
+    chart_path = "market_chart.png"
+    plt.savefig(chart_path, dpi=150)
+    plt.close()
 
-if alerts:
-    message += "⚠️ Riasztások:\n" + "\n".join(alerts) + "\n\n"
+    # Üzenet összeállítása Telegramra
+    message = f"🏛️ Mester Kvant Intézményi Jelentés ({today_str})\n\n"
+    message += f"🌐 Piaci Hangulat: {market_sentiment}\n\n"
+    message += "\n\n".join(data_results) + "\n\n"
 
-profit_icon = "🟢" if total_daily_profit >= 0 else "🔴"
-message += f"💰 Napi Portfólió Változás: {profit_icon} {total_daily_profit:+.2f} USD"
+    if alerts:
+        message += "⚠️ Riasztások:\n" + "\n".join(alerts) + "\n\n"
 
-# Telegram API hívás inline gombokkal
-url_text = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-keyboard = {
-    "inline_keyboard": [
-        [{"text": "🔄 Frissítés / Újraelemzés", "callback_data": "refresh_data"}],
-        [{"text": "📊 Részletes Statisztika", "callback_data": "show_stats"}]
-    ]
-}
-payload = {
-    'chat_id': TELEGRAM_CHAT_ID,
-    'text': message,
-    'parse_mode': 'Markdown',
-    'reply_markup': keyboard
-}
-response = requests.post(url_text, json=payload)
-print(f"Telegram üzenet státusz: {response.status_code}")
+    profit_icon = "🟢" if total_daily_profit >= 0 else "🔴"
+    message += f"💰 Napi Portfólió Változás: {profit_icon} {total_daily_profit:+.2f} USD"
+
+    # Telegram üzenet + Gombok küldése
+    keyboard = {
+        "inline_keyboard": [
+            [{"text": "🔄 Frissítés / Újraelemzés", "callback_data": "refresh_data"}],
+            [{"text": "📊 Részletes Statisztika", "callback_data": "show_stats"}]
+        ]
+    }
+    
+    send_telegram_message(message, reply_markup=keyboard)
+
+    # Grafikon küldése képtként
+    if os.path.exists(chart_path):
+        send_telegram_photo(chart_path, caption="📈 30 napos normalizált piaci teljesítmény")
+
+    print("Futás sikeresen lezajlott!")
+
+except Exception as err:
+    error_msg = f"🚨 KRITIKUS HIBA A KVANTOVÁSI MOTORBAN:\n`{str(err)}`"
+    print(error_msg)
+    try:
+        send_telegram_message(error_msg)
+    except Exception:
+        pass
