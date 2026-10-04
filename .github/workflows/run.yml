@@ -2,7 +2,8 @@ name: Trading Bot Automata Futtatas
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    # Fut naponta 3 alkalommal: UTC 6:00, 12:00, 18:00
+    - cron: '0 6,12,18 * * *'
   workflow_dispatch:
 
 jobs:
@@ -17,10 +18,17 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Szükséges csomagok telepitese
+      - name: Szukseges csomagok telepitese
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install pandas numpy requests yfinance
 
       - name: Bot futtatasa
         run: python bot.py
+
+      - name: Jelentes mentese (Artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: trading-report
+          path: trading_report.csv
+
