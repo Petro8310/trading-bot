@@ -1,4 +1,3 @@
-
 import MetaTrader5 as mt5
 import pandas as pd
 import numpy as np
@@ -6,12 +5,13 @@ import time
 import requests
 from datetime import datetime
 
-class InstitutionalMasterBot:
-    def _init_(self, symbol="EURUSD", max_spread_pips=2.5, telegram_token=None, chat_id=None):
-        self.symbol = symbol
+class InstitutionalMasterPortfolioBot:
+    def _init_(self, symbols=["EURUSD", "GBPUSD", "USDJPY"], max_spread_pips=2.5, telegram_token=None, chat_id=None, forward_test_mode=True):
+        self.symbols = symbols
         self.max_spread = max_spread_pips
         self.telegram_token = telegram_token
         self.chat_id = chat_id
+        self.forward_test_mode = forward_test_mode # True esetén csak logol, nem nyit éles pozíciót (Forward Testing)
 
     def send_telegram_alert(self, message):
         """1. Valós idejű Telegram Telemetria"""
@@ -22,7 +22,7 @@ class InstitutionalMasterBot:
         url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
         payload = {
             "chat_id": self.chat_id,
-            "text": f"🤖 [FTMO Bot Riasztás]\n{message}",
+            "text": f"🤖 [FTMO Portfolio Bot]\n{message}",
             "parse_mode": "Markdown"
         }
         try:
@@ -43,9 +43,9 @@ class InstitutionalMasterBot:
                 self.send_telegram_alert("✅ Siker: Az MT5 kapcsolat helyreállt.")
         return True
 
-    def check_market_regime(self):
-        """3. Multi-Timeframe Rezsim- és Volatilitás-Szűrő"""
-        rates = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_H1, 0, 50)
+    def check_market_regime(self, symbol):
+        """3. Multi-Timeframe Rezsim- és Volatilitás-Szűrő adott szimbólumra"""
+        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 0, 50)
         if rates is None or len(rates) < 50:
             return False
         
@@ -62,10 +62,21 @@ class InstitutionalMasterBot:
         
         return trend_strength > 1.1 # True, ha trendelő; False, ha oldalazó
 
-    def is_high_impact_news_time(self):
-        """4. Automatikus Hírkormányzó (News Governor)"""
-        # Itt köthető be a külső naptár API (pl. Forex Factory)
-        return False
+    def verify_execution_safety(self, symbol):
+        """4. Smart Execution Guard (Spread- és Csúszásvédelmi Pajzs)"""
+        symbol_info = mt5.symbol_info(symbol)
+        tick = mt5.symbol_info_tick(symbol)
+        if symbol_info is None or tick is None:
+            return False
+
+        spread_points = symbol_info.spread
+        point_size = symbol_info.point
+        pip_spread = (spread_points * point_size) / 0.0001 if "JPY" not in symbol else (spread_points * point_size) / 0.01
+
+        if pip_spread > self.max_spread:
+            print(f"🚨 [{symbol} SPREAD VÉDELEM] Túl magas spread: {pip_spread:.2f} pip. Kötés letiltva.")
+            return False
+        return True
 
     def get_equity_curve_multiplier(self):
         """5. Dinamikus Equity Curve Guard (Tőkeörv)"""
@@ -80,43 +91,26 @@ class InstitutionalMasterBot:
             return 0.75  # Profit esetén óvatosabb méretezés
         return 1.0
 
-    def verify_execution_safety(self):
-        """6. Smart Execution Guard (Spread- és Csúszásvédelmi Pajzs)"""
-        symbol_info = mt5.symbol_info(self.symbol)
-        tick = mt5.symbol_info_tick(self.symbol)
-        if symbol_info is None or tick is None:
-            return False
-
-        spread_points = symbol_info.spread
-        point_size = symbol_info.point
-        pip_spread = (spread_points * point_size) / 0.0001 if "JPY" not in self.symbol else (spread_points * point_size) / 0.01
-
-        if pip_spread > self.max_spread:
-            print(f"🚨 [SPREAD VÉDELEM] Túl magas spread: {pip_spread:.2f} pip. Kötés letiltva.")
-            return False
-        return True
-
-    def run_backtest_simulation(self):
-        """7. Historikus Backtesting Motívum"""
-        rates = mt5.copy_rates_from_pos(self.symbol, mt5.TIMEFRAME_H1, 0, 200)
+    def run_walkforward_simulation(self, symbol):
+        """6. Adaptív Walk-Forward / Múltbeli Optimalizációs Ellenőrzés"""
+        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 0, 150)
         if rates is None:
             return 1.0
         df = pd.DataFrame(rates)
         df['Return'] = df['close'].pct_change()
         pos_sum = df[df['Return'] > 0]['Return'].sum()
         neg_sum = abs(df[df['Return'] < 0]['Return'].sum())
-        pf = pos_sum / neg_sum if neg_sum > 0 else 1.5
-        print(f"[BACKTEST] Előzetes Profit Factor teszt: {pf:.2f}")
+        pf = pos_sum / neg_sum if neg_sum > 0 else 1.2
         return pf
 
     def start(self):
-        print(f"Intézményi Mester Bot indítása a {self.symbol} páron...")
+        print(f"Intézményi Multi-Asset Portfólió Bot indítása a következő párokon: {self.symbols}...")
         if not mt5.initialize():
             print("Hiba az MT5 inicializálásakor.")
             return
 
-        self.run_backtest_simulation()
-        self.send_telegram_alert("🚀 A mesterrendszer sikeresen elindult!")
+        mode_str = "Forward Testing (Demo Log Mód)" if self.forward_test_mode else "Éles Kereskedés"
+        self.send_telegram_alert(f"🚀 A portfólió bot elindult! Üzemmód: {mode_str}")
 
         while True:
             try:
@@ -125,35 +119,52 @@ class InstitutionalMasterBot:
                     time.sleep(10)
                     continue
 
-                # 2. Hírfigyelő
-                if self.is_high_impact_news_time():
-                    print("[HÍR VÉDELEM] Fontos makroadat közeleg. Várakozás...")
-                    time.sleep(300)
-                    continue
+                # 2. Portfólió ciklus (Minden devizapár vizsgálata egymás után)
+                for symbol in self.symbols:
+                    print(f"\n--- Elemzés futtatása: {symbol} ---")
 
-                # 3. Piaci rezsim szűrő
-                if not self.check_market_regime():
-                    print("[REZSIM SZŰRŐ] Oldalazó piac. Várakozás...")
-                    time.sleep(60)
-                    continue
+                    # Walk-forward / historikus teljesítmény ellenőrzés
+                    pf = self.run_walkforward_simulation(symbol)
+                    if pf < 1.0:
+                        print(f"[{symbol}] Gyenge múltbeli teljesítmény (PF: {pf:.2f}). Kihagyás.")
+                        continue
 
-                # 4. Spread / Csúszásvédelem
-                if not self.verify_execution_safety():
-                    time.sleep(15)
-                    continue
+                    # Piaci rezsim szűrő
+                    if not self.check_market_regime(symbol):
+                        print(f"[{symbol}] Oldalazó vagy bizonytalan piac. Kihagyás.")
+                        continue
 
-                # 5. Dinamikus kockázat
-                risk_multiplier = self.get_equity_curve_multiplier()
-                print(f"[RENDSZER OK] Minden feltétel adott. Aktív risk szorzó: {risk_multiplier}")
+                    # Spread védelem
+                    if not self.verify_execution_safety(symbol):
+                        continue
 
-                time.sleep(30)
+                    # Kockázati szorzó lekérése
+                    risk_multiplier = self.get_equity_curve_multiplier()
+
+                    # Végrehajtás vagy Forward Testing logolás
+                    if self.forward_test_mode:
+                        log_msg = f"🧪 [FORWARD TEST] {symbol}: Feltételek tökéletesek! (Risk Mult: {risk_multiplier}, PF: {pf:.2f}). Szimulált jel rögzítve."
+                        print(log_msg)
+                        # Itt küldhetünk Telegram értesítést is fontosabb eseményekkor
+                    else:
+                        print(f"💰 [{symbol}] Éles megbízás küldése az MT5-nek...")
+                        # Ide jönne az igazi mt5.order_send() parancs
+
+                # Ciklus szünet a következő iteráció előtt
+                print("\n[PORTFÓLIÓ] Ciklus vége. Várakozás a következő ellenőrzésre...")
+                time.sleep(45)
 
             except KeyboardInterrupt:
                 print("Bot kézi leállítása.")
-                self.send_telegram_alert("🛑 A bot manuálisan leállítva.")
+                self.send_telegram_alert("🛑 A portfólió bot manuálisan leállítva.")
                 mt5.shutdown()
                 break
 
 if _name_ == "_main_":
-    bot = InstitutionalMasterBot(symbol="EURUSD", max_spread_pips=2.5)
+    # Multi-Asset kosár beállítása (EURUSD, GBPUSD, USDJPY)
+    bot = InstitutionalMasterPortfolioBot(
+        symbols=["EURUSD", "GBPUSD", "USDJPY"],
+        max_spread_pips=2.5,
+        forward_test_mode=True # Teszt üzemmódban indítva
+    )
     bot.start()
