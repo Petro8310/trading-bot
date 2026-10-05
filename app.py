@@ -1,79 +1,99 @@
 
-import streamlit as st
+import MetaTrader5 as mt5
 import pandas as pd
 import numpy as np
+import time
+from datetime import datetime, timedelta
 
-# Oldal konfiguráció
-st.set_page_config(
-    page_title="Mester Kvant - Prop Firm Funded Terminal",
-    page_icon="💼",
-    layout="wide"
-)
+def check_market_regime(symbol, timeframe=mt5.TIMEFRAME_H1):
+    """
+    3. Adaptív Piaci Rezsim Váltás:
+    Megállapítja, hogy a piac trendel-e (ATR és ADX alapján) vagy oldalaz.
+    Visszatérés: 'TRENDING', 'RANGING' vagy 'NO_TRADE'
+    """
+    rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, 50)
+    if rates is None:
+        return "NO_TRADE"
+    
+    df = pd.DataFrame(rates)
+    
+    # Egyszerűsített Volatilitás (ATR) és Irányjelző szűrés
+    high_low = df['high'] - df['low']
+    high_close = np.abs(df['high'] - df['close'].shift())
+    low_close = np.abs(df['low'] - df['close'].shift())
+    true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    atr = true_range.rolling(14).mean().iloc[-1]
+    
+    # Mozgóátlagok távolsága mint trend-erősség
+    ma_fast = df['close'].ewm(span=10).mean().iloc[-1]
+    ma_slow = df['close'].ewm(span=30).mean().iloc[-1]
+    trend_strength = abs(ma_fast - ma_slow) / atr
+    
+    if trend_strength > 1.2:
+        return "TRENDING"  # Mehet a trendkövető stratégia
+    elif trend_strength < 0.5:
+        return "RANGING"   # Oldalazás - vagy tiltás, vagy mean-reversion
+    else:
+        return "NO_TRADE"  # Bizonytalan piac, inkább maradjunk távol
 
-# Címsor
-st.title("💼 Mester Kvant - Prop Firm & Funded Account Kötéskezelő")
-st.markdown("Ez a verzió már tartalmazza a *Proprietary Trading (Finanszírozott Számla) Szabályzatfigyelőt*, a napi veszteség-limiteket és a célkitűzés-követőt!")
+def is_high_impact_news_time():
+    """
+    1. Automatikus Hír- és Eseményfigyelő (News Governor):
+    Szimulált/API-alapú ellenőrzés: ha híridő van (pl. 15 percen belül), True-t ad vissza.
+    (Itt élesben egy gazdasági naptár API-t, pl. Forex Factory / Investing.com JSON-t hívunk meg)
+    """
+    now = datetime.now()
+    # Példa logika: ha szerda délután 2 óra körüli fontos adat van, vagy CPI/NFP időpont
+    # Élesben ezt egy külső naptár adatsorral kötjük össze.
+    return False # Alapértelmezésben nincsen tiltott hír
 
-# Oldalsáv (Sidebar)
-st.sidebar.header("Prop Firm Vezérlőpult")
-bot_status = st.sidebar.toggle("Algoritmus futtatása (Live)", value=True)
-selected_symbol = st.sidebar.selectbox("Fő eszköz", ["BTC/USDT", "ETH/USDT", "SOL/USDT"])
-target_account_size = st.sidebar.selectbox("Célzott Prop Számla Méret", ["$10,000", "$50,000", "$100,000"])
-max_daily_loss_limit = st.sidebar.slider("Megengedett Napi Veszteség Limit (%)", 3, 5, 4)
+def get_dynamic_risk_multiplier():
+    """
+    2. Dinamikus Távolságkövető Drawdown Védelem (Equity Curve Guard):
+    Ha a nap folyamán már nyereségben vagyunk, bebiztosítjuk; 
+    ha közeledünk a napi limithez, csökkentjük a kockázatot.
+    """
+    account = mt5.account_info()
+    if not account:
+        return 1.0
+        
+    daily_pnl = account.equity - account.balance
+    
+    if daily_pnl < -200:  # Ha már van 200 EUR mínuszunk a napban
+        return 0.5        # Felezzük a lot méretet, hogy ne bukjuk el a fiókot
+    elif daily_pnl > 300: # Ha már van szép profitunk
+        return 0.75       # Óvatosabb méretezés a nyereség megőrzésére
+        
+    return 1.0            # Normál kockázat
 
-if bot_status:
-    st.sidebar.success("Státusz: PROP CHALLENGE MÓD AKTÍV 🟢")
-else:
-    st.sidebar.warning("Státusz: LEÁLLÍTVA 🔴")
+# --- FŐ KERESKEDÉSI CIKLUS ---
+def master_trading_bot(symbol="EURUSD"):
+    print(f"Kvantitatív Bot elindítva a {symbol} páron a 3 mestermodullal...")
+    
+    if not mt5.initialize():
+        print("Hiba az MT5 csatlakozáskor.")
+        return
 
-# Adatgenerálás szimulációhoz
-np.random.seed(4040)
-n_periods = 170
-base_price = 73000.0 if "BTC" in selected_symbol else (3000.0 if "ETH" in selected_symbol else 230.0)
-price_changes = np.random.normal(loc=0.0007, scale=0.015, size=n_periods)
-prices = base_price * np.cumprod(1 + price_changes)
-
-df = pd.DataFrame({'Piaci Ár ($)': prices})
-
-# --- PROP FIRM SZABÁLYZAT & NAPI VESZTESÉG MODUL ---
-df['Returns'] = df['Piaci Ár ($)'].pct_change().fillna(0)
-current_drawdown = (df['Piaci Ár ($)'].cummax() - df['Piaci Ár ($)']) / df['Piaci Ár ($)'].cummax() * 100
-max_dd_current = current_drawdown.iloc[-1]
-
-# Célkitűzés (pl. 10% profit target a kihíváshoz)
-profit_target_pct = 10.0
-current_profit_pct = ((df['Piaci Ár ($)'].iloc[-1] - df['Piaci Ár ($)'].iloc[0]) / df['Piaci Ár ($)'].iloc[0]) * 100
-
-if max_dd_current > max_daily_loss_limit:
-    prop_status = "SZABÁLYSértés / FAIL ❌ (Túllépett napi drawdown)"
-    prop_color = "red"
-elif current_profit_pct >= profit_target_pct:
-    prop_status = "CHALLENGE TELJESÍTVE! 🏆 (Tőke elnyerve)"
-    prop_color = "green"
-else:
-    prop_status = "CHALLENGE FOLYAMATBAN ✅ (Szabályok betartva)"
-    prop_color = "orange"
-
-# --- Főoldali Metrikák Megjelenítése ---
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Prop Challenge Státusz", prop_status)
-col2.metric("Jelenlegi Profit / Hozam", f"{current_profit_pct:+.2f}%", f"Cél: +{profit_target_pct}%")
-col3.metric("Aktuális Drawdown (Veszteség)", f"-{max_dd_current:.2f}%", f"Limit: -{max_daily_loss_limit}%")
-col4.metric("Kiválasztott Számla", target_account_size)
-
-st.markdown("---")
-
-# Részletes Prop Firm Panel
-st.subheader("🎯 Prop Firm Kockázati és Szabályzat-ellenőrző")
-scol1, scol2, scol3 = st.columns(3)
-scol1.metric("Napi Max Drawdown Keret", f"{max_daily_loss_limit}%", "Biztonságos Zóna")
-scol2.metric("Célzott Profit Elérés", f"{current_profit_pct:+.2f}%", "Optimalizálva")
-scol3.metric("Intézményi Értékelés", "Passzív Megfelelés", "Készen áll a tesztre")
-
-st.markdown("---")
-
-# Grafikon megjelenítése
-st.subheader(f"📈 Számlanövekedési Görbe & Drawdown: {selected_symbol}")
-st.line_chart(df[['Piaci Ár ($)']])
-
-st.info(f"💡 *Prop Firm Elemzés:* A kiválasztott *{target_account_size}-es* konstrukcióhoz a rendszer figyeli a(z) *{max_daily_loss_limit}%-os maximális napi drawdown limitet. A jelenlegi maximális lehúzás *-{max_dd_current:.2f}%**, ami azt jelenti, hogy a bot tökéletesen betartja a finanszírozott cégek által elvárt szigorú kockázati szabályokat.")
+    while True:
+        # 1. Hírfigyelő ellenőrzés
+        if is_high_impact_news_time():
+            print("[HÍR VÉDELEM] Közel a fontos makrogazdasági hír. Kereskedés szüneteltetve.")
+            time.sleep(300)
+            continue
+            
+        # 2. Piaci Rezsim Ellenőrzés
+        regime = check_market_regime(symbol)
+        if regime != "TRENDING":
+            print(f"[REZSIM VÁLTÁS] A piac jelenleg nem alkalmas trendkövetésre ({regime}). Várakozás...")
+            time.sleep(60)
+            continue
+            
+        # 3. Dinamikus Kockázat Szorzó lekérése
+        risk_multiplier = get_dynamic_risk_multiplier()
+        print(f"[KOCKÁZAT VÉDELEM] Aktív risk multiplier: {risk_multiplier}")
+        
+        # --- ITT JÖNNÉNEK A JELGENERÁLÁSI ÉS POZÍCIÓNYITÁSI LOGIKÁK ---
+        # Ha a rezsim rendben van, nincs hír, és a drawdown is biztonságos, 
+        # a bot a kiszámolt risk_multiplier-rel nyitja meg a pozíciót.
+        
+        time.sleep(30) # Ciklus szünet
